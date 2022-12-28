@@ -2,13 +2,18 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/Sioro-Neoku/go-peerflix/search"
+	"github.com/olekukonko/tablewriter"
 )
 
 // Exit statuses.
@@ -18,9 +23,13 @@ const (
 	exitErrorInClient
 )
 
+func isTorrent(query string) bool {
+	return strings.HasPrefix(query, "magnet:") || strings.HasPrefix(query, "http") || strings.HasSuffix(query, ".torrent")
+}
+
 func main() {
 	// Parse flags.
-	player := flag.String("player", "", "Open the stream with a video player ("+joinPlayerNames()+")")
+	player := flag.String("player", "vlc", "Open the stream with a video player ("+joinPlayerNames()+")")
 	cfg := NewClientConfig()
 	flag.IntVar(&cfg.Port, "port", cfg.Port, "Port to stream the video on")
 	flag.IntVar(&cfg.TorrentPort, "torrent-port", cfg.TorrentPort, "Port to listen for incoming torrent connections")
@@ -32,7 +41,46 @@ func main() {
 		flag.Usage()
 		os.Exit(exitNoTorrentProvided)
 	}
-	cfg.TorrentPath = flag.Arg(0)
+
+	query := strings.Join(flag.Args(), " ")
+	if isTorrent(query) {
+		cfg.TorrentPath = flag.Arg(0)
+	} else {
+		torrents := search.Search(query)
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader([]string{"#", "Name", "Size", "Seeders", "Leechers"})
+		for i, torrent := range torrents {
+			table.Append([]string{
+				strconv.Itoa(i + 1),
+				torrent.Name,
+				torrent.Size,
+				strconv.Itoa(torrent.Seeders),
+				strconv.Itoa(torrent.Leechers),
+			})
+		}
+
+		table.Render()
+
+		var index int
+		for {
+			fmt.Print("Select a torrent: ")
+			_, err := fmt.Scanf("%d", &index)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+
+			if index < 1 || index > len(torrents) {
+				fmt.Println("Invalid index")
+				continue
+			}
+
+			break
+		}
+
+		cfg.TorrentPath = torrents[index-1].MagnetURI()
+		fmt.Println(cfg.TorrentPath)
+	}
 
 	// Start up the torrent client.
 	client, err := NewClient(cfg)

@@ -94,6 +94,7 @@ func NewClient(cfg ClientConfig) (client Client, err error) {
 	// Add as magnet url.
 	if strings.HasPrefix(cfg.TorrentPath, "magnet:") {
 		if t, err = c.AddMagnet(cfg.TorrentPath); err != nil {
+			panic(err)
 			return client, ClientError{Type: "adding torrent", Origin: err}
 		}
 	} else {
